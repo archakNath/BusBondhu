@@ -30,30 +30,87 @@ export async function getBusStops(req, res) {
 // Add a new bus stop
 export async function addBusStops(req, res) {
     try {
-        const { geometry, properties } = req.body;
+        const { name, location, routes } = req.body;
 
-        if (
-            !geometry ||
-            geometry.type !== "Point" ||
-            !geometry.coordinates ||
-            geometry.coordinates.length !== 2
-        ) {
-            return res.status(400).json({
-                error: "Invalid location format. Expected GeoJSON Point with [longitude, latitude].",
-            });
+        if (!name) {
+            return res.status(400).json({ error: "Bus stop 'name' is required." });
         }
 
-        const busStop = new BusStop({
-            name: properties.name, // ✅ updated field name
-            location: {
+        const busStopData = {
+            name: name,
+            routes: Array.isArray(routes) ? routes : [],
+        };
+
+        if (location && location.type === "Point" && Array.isArray(location.coordinates) && location.coordinates.length === 2) {
+            busStopData.location = {
                 type: "Point",
-                coordinates: geometry.coordinates,
-            },
-            routes: Array.isArray(properties.routes) ? properties.routes : [], // optional safe fallback
-        });
+                coordinates: location.coordinates,
+            };
+        } else {
+            busStopData.location = null; // Allow location to be null
+        }
+
+        const busStop = new BusStop(busStopData);
 
         await busStop.save();
         res.status(201).json(busStop);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+}
+
+// Delete a bus stop by _id
+export async function deleteBusStop(req, res) {
+    try {
+        const { id } = req.params;
+
+        if (!id) {
+            return res.status(400).json({ error: "Bus stop '_id' is required." });
+        }
+
+        const deletedBusStop = await BusStop.findByIdAndDelete(id);
+
+        if (!deletedBusStop) {
+            return res.status(404).json({ error: "Bus stop not found." });
+        }
+
+        res.status(200).json({ message: "Bus stop deleted successfully.", deletedBusStop });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+}
+
+// Update a bus stop by _id
+export async function updateBusStop(req, res) {
+    try {
+        const { id } = req.params;
+        const { name, location, routes } = req.body;
+
+        if (!id) {
+            return res.status(400).json({ error: "Bus stop '_id' is required." });
+        }
+
+        const busStop = await BusStop.findById(id);
+
+        if (!busStop) {
+            return res.status(404).json({ error: "Bus stop not found." });
+        }
+
+        // Update the fields if provided
+        if (name) busStop.name = name;
+        if (routes) busStop.routes = Array.isArray(routes) ? routes : [];
+        if (location && location.type === "Point" && Array.isArray(location.coordinates) && location.coordinates.length === 2) {
+            busStop.location = {
+                type: "Point",
+                coordinates: location.coordinates,
+            };
+        } else if (location === null) {
+            busStop.location = null; // Allow location to be null if no valid location is provided
+        }
+
+        // Save the updated bus stop
+        await busStop.save();
+        res.status(200).json(busStop);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

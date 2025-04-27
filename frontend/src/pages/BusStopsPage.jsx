@@ -1,4 +1,7 @@
 import React, { useEffect, useState } from "react";
+import { LocationEdit, Trash } from "lucide-react";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css"; // Import the default styles
 
 const BusStopsPage = () => {
   const [busStops, setBusStops] = useState([]);
@@ -18,6 +21,12 @@ const BusStopsPage = () => {
     location: { lat: "", lon: "" },
     routes: [],
   });
+
+  const [showDeleteWarning, setShowDeleteWarning] = useState(false);
+  const [busStopToDelete, setBusStopToDelete] = useState(null);
+
+  const [showEditBusStopDialog, setShowEditBusStopDialog] = useState(false);
+  const [busStopToEdit, setBusStopToEdit] = useState(null);
 
   useEffect(() => {
     fetch("http://localhost:5000/api/busstops")
@@ -43,25 +52,15 @@ const BusStopsPage = () => {
     setFilteredStops(filtered);
   }, [searchTerm, busStops]);
 
-  useEffect(() => {
-    const filtered = busStops.filter(
-      (stop) =>
-        stop.name && stop.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    setFilteredStops(filtered);
-  }, [searchTerm, busStops]);
-
   const computeStats = (data) => {
     const routeCount = {};
     const locationCount = {};
 
     data.forEach((stop) => {
-      // Count routes
       stop.routes?.forEach((route) => {
         routeCount[route] = (routeCount[route] || 0) + 1;
       });
 
-      // Count locations
       locationCount[stop.location] = (locationCount[stop.location] || 0) + 1;
     });
 
@@ -79,30 +78,28 @@ const BusStopsPage = () => {
   };
 
   const handleAddBusStop = () => {
-    // Validate if name and location are filled
-    if (
-      !newBusStop.name ||
-      !newBusStop.location.lat ||
-      !newBusStop.location.lon
-    ) {
-      alert("Please fill in all required fields.");
+    if (!newBusStop.name) {
+      toast.error("Please enter the bus stop name."); // Show error toast if name is missing
       return;
     }
 
-    // Format location into the correct shape expected by the backend
-    const formattedLocation = {
-      type: "Point",
-      coordinates: [newBusStop.location.lon, newBusStop.location.lat],
-    };
-
-    // Create the payload with the correctly formatted location
-    const busStopData = {
+    let busStopData = {
       name: newBusStop.name,
-      location: formattedLocation,
-      routes: newBusStop.routes, // Since routes is optional, it can be an empty array initially
+      routes: newBusStop.routes,
     };
 
-    // Send the new bus stop to the server
+    if (newBusStop.location.lat && newBusStop.location.lon) {
+      busStopData.location = {
+        type: "Point",
+        coordinates: [
+          parseFloat(newBusStop.location.lon),
+          parseFloat(newBusStop.location.lat),
+        ],
+      };
+    } else {
+      busStopData.location = null;
+    }
+
     fetch("http://localhost:5000/api/busstops", {
       method: "POST",
       headers: {
@@ -112,21 +109,53 @@ const BusStopsPage = () => {
     })
       .then((res) => res.json())
       .then((data) => {
-        // Add the new bus stop to the state and close the dialog
         setBusStops((prevStops) => [...prevStops, data]);
         setFilteredStops((prevStops) => [...prevStops, data]);
         setShowAddBusStopDialog(false);
+        setNewBusStop({
+          name: "",
+          location: { lat: "", lon: "" },
+          routes: [],
+        });
+        toast.success("Bus stop added successfully!"); // Show success toast
       })
       .catch((err) => {
         console.error("Failed to add bus stop:", err);
+        toast.error("Failed to add bus stop. Please try again."); // Show error toast on failure
       });
+  };
+
+  const handleDeleteBusStop = () => {
+    if (busStopToDelete) {
+      fetch(`http://localhost:5000/api/busstops/${busStopToDelete._id}`, {
+        method: "DELETE",
+      })
+        .then(() => {
+          // Update the bus stops state by removing the deleted bus stop
+          setBusStops((prevStops) =>
+            prevStops.filter((stop) => stop._id !== busStopToDelete._id)
+          );
+          setFilteredStops((prevStops) =>
+            prevStops.filter((stop) => stop._id !== busStopToDelete._id)
+          );
+          setShowDeleteWarning(false);
+          setBusStopToDelete(null);
+
+          // Show success toast after deletion
+          toast.success("Bus stop deleted successfully!");
+        })
+        .catch((err) => {
+          console.error("Failed to delete bus stop:", err);
+          // Show error toast if deletion fails
+          toast.error("Failed to delete bus stop. Please try again.");
+        });
+    }
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
 
     if (name === "location") {
-      // Ensure the value is a valid coordinate object (we'll assume it's a string in format "lat, lon")
       const [lat, lon] = value
         .split(",")
         .map((coord) => parseFloat(coord.trim()));
@@ -142,6 +171,81 @@ const BusStopsPage = () => {
     }
   };
 
+  const handleEditInputChange = (e) => {
+    const { name, value } = e.target;
+
+    if (name === "location") {
+      const [lat, lon] = value
+        .split(",")
+        .map((coord) => parseFloat(coord.trim()));
+      setBusStopToEdit((prevState) => ({
+        ...prevState,
+        location: { lat, lon },
+      }));
+    } else {
+      setBusStopToEdit((prevState) => ({
+        ...prevState,
+        [name]: value,
+      }));
+    }
+  };
+
+  const handleUpdateBusStop = () => {
+    if (!busStopToEdit.name) {
+      toast.error("Please enter the bus stop name.");
+      return;
+    }
+
+    let busStopData = {
+      name: busStopToEdit.name,
+      routes: busStopToEdit.routes,
+    };
+
+    if (
+      busStopToEdit.location &&
+      busStopToEdit.location.lat &&
+      busStopToEdit.location.lon
+    ) {
+      busStopData.location = {
+        type: "Point",
+        coordinates: [
+          parseFloat(busStopToEdit.location.lon),
+          parseFloat(busStopToEdit.location.lat),
+        ],
+      };
+    } else {
+      busStopData.location = null; // Ensure location is explicitly set to null if not provided
+    }
+
+    fetch(`http://localhost:5000/api/busstops/${busStopToEdit._id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(busStopData),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setBusStops((prevStops) =>
+          prevStops.map((stop) =>
+            stop._id === busStopToEdit._id ? data : stop
+          )
+        );
+        setFilteredStops((prevStops) =>
+          prevStops.map((stop) =>
+            stop._id === busStopToEdit._id ? data : stop
+          )
+        );
+        setShowEditBusStopDialog(false);
+        setBusStopToEdit(null);
+        toast.success("Bus stop updated successfully!");
+      })
+      .catch((err) => {
+        console.error("Failed to update bus stop:", err);
+        toast.error("Failed to update bus stop. Please try again.");
+      });
+  };
+
   const handleLocationChange = (e) => {
     const { name, value } = e.target;
     setNewBusStop((prevState) => ({
@@ -151,6 +255,21 @@ const BusStopsPage = () => {
         [name]: value,
       },
     }));
+  };
+
+  const openDeleteWarning = (busStop) => {
+    setBusStopToDelete(busStop);
+    setShowDeleteWarning(true);
+  };
+
+  const closeDeleteWarning = () => {
+    setShowDeleteWarning(false);
+    setBusStopToDelete(null);
+  };
+
+  const openEditBusStopDialog = (busStop) => {
+    setBusStopToEdit(busStop);
+    setShowEditBusStopDialog(true);
   };
 
   if (loading) {
@@ -167,11 +286,11 @@ const BusStopsPage = () => {
 
   return (
     <div className="p-6">
+      <ToastContainer />
       <div className="flex justify-between mb-4">
         <h1 className="text-2xl font-semibold text-gray-800">All Bus Stops</h1>
 
         <div>
-          {/* Toggle Stats Button */}
           <button
             onClick={() => setShowStats(!showStats)}
             className="mb-4 px-4 py-2 mr-2 bg-blue-600 cursor-pointer text-white rounded hover:bg-blue-700 transition-all"
@@ -179,7 +298,6 @@ const BusStopsPage = () => {
             {showStats ? "Hide Statistics" : "Show Statistics"}
           </button>
 
-          {/* Add Bus Stop Button */}
           <button
             onClick={() => setShowAddBusStopDialog(true)}
             className="px-4 py-2 cursor-pointer bg-green-600 text-white rounded hover:bg-green-700 transition-all"
@@ -189,7 +307,6 @@ const BusStopsPage = () => {
         </div>
       </div>
 
-      {/* Collapsible Statistics */}
       {showStats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-white p-4 rounded shadow border">
@@ -211,7 +328,6 @@ const BusStopsPage = () => {
         </div>
       )}
 
-      {/* Search Input */}
       <input
         type="text"
         placeholder="Search bus stops..."
@@ -220,7 +336,6 @@ const BusStopsPage = () => {
         onChange={(e) => setSearchTerm(e.target.value)}
       />
 
-      {/* Bus Stops List */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredStops.map((stop, index) => (
           <div
@@ -236,14 +351,155 @@ const BusStopsPage = () => {
             <p className="text-sm text-gray-500">
               Location:{" "}
               {stop.location
-                ? `Lat: ${stop.location.lat}, Lon: ${stop.location.lon}`
+                ? `Lat: ${stop.location.coordinates[1]}, Lon: ${stop.location.coordinates[0]}`
                 : "Unknown"}
             </p>
+
+            <button
+              onClick={() => openDeleteWarning(stop)}
+              className="mt-4 bg-red-100 text-red-500 p-2 rounded hover:bg-red-500 hover:text-white transition-all cursor-pointer"
+            >
+              <Trash size={20} />
+            </button>
+            <button
+              onClick={() => openEditBusStopDialog(stop)}
+              className="mt-4 ml-2 bg-blue-100 text-blue-500 p-2 rounded hover:bg-blue-500 hover:text-white transition-all cursor-pointer"
+            >
+              <LocationEdit size={20} />
+            </button>
           </div>
         ))}
       </div>
 
-      {/* Add Bus Stop Dialog */}
+      {showDeleteWarning && (
+        <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded shadow-lg w-96">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              Are you sure you want to delete this bus stop?
+            </h2>
+            <div className="flex justify-between">
+              <button
+                onClick={closeDeleteWarning}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteBusStop}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 cursor-pointer"
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditBusStopDialog && busStopToEdit && (
+        <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded shadow-lg w-96">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+              Edit Bus Stop
+            </h2>
+            <div className="mb-4">
+              <label htmlFor="name" className="block text-gray-600">
+                Bus Stop Name
+              </label>
+              <input
+                type="text"
+                id="name"
+                name="name"
+                value={busStopToEdit.name}
+                onChange={handleEditInputChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                placeholder="Enter bus stop name"
+              />
+            </div>
+
+            {/* Conditionally render latitude and longitude inputs */}
+            {busStopToEdit.location ? (
+              <>
+                <div className="mb-4">
+                  <label htmlFor="lat" className="block text-gray-600">
+                    Latitude
+                  </label>
+                  <input
+                    type="text"
+                    id="lat"
+                    name="lat"
+                    value={busStopToEdit.location.lat || ""}
+                    onChange={handleEditInputChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                    placeholder="Enter latitude"
+                  />
+                </div>
+                <div className="mb-4">
+                  <label htmlFor="lon" className="block text-gray-600">
+                    Longitude
+                  </label>
+                  <input
+                    type="text"
+                    id="lon"
+                    name="lon"
+                    value={busStopToEdit.location.lon || ""}
+                    onChange={handleEditInputChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                    placeholder="Enter longitude"
+                  />
+                </div>
+              </>
+            ) : (
+              // If location is not available, allow user to input location
+              <>
+                <div className="mb-4">
+                  <label htmlFor="lat" className="block text-gray-600">
+                    Latitude
+                  </label>
+                  <input
+                    type="text"
+                    id="lat"
+                    name="lat"
+                    value={busStopToEdit.lat || ""}
+                    onChange={handleEditInputChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                    placeholder="Enter latitude"
+                  />
+                </div>
+                <div className="mb-4">
+                  <label htmlFor="lon" className="block text-gray-600">
+                    Longitude
+                  </label>
+                  <input
+                    type="text"
+                    id="lon"
+                    name="lon"
+                    value={busStopToEdit.lon || ""}
+                    onChange={handleEditInputChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                    placeholder="Enter longitude"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="flex justify-between">
+              <button
+                onClick={() => setShowEditBusStopDialog(false)}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateBusStop}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
+              >
+                Update Bus Stop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddBusStopDialog && (
         <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded shadow-lg w-96">
@@ -275,7 +531,7 @@ const BusStopsPage = () => {
                 value={newBusStop.location.lat}
                 onChange={handleLocationChange}
                 className="w-full px-4 py-2 border border-gray-300 rounded-md"
-                placeholder="Enter latitude"
+                placeholder="Enter latitude (optional)"
               />
             </div>
             <div className="mb-4">
@@ -289,7 +545,7 @@ const BusStopsPage = () => {
                 value={newBusStop.location.lon}
                 onChange={handleLocationChange}
                 className="w-full px-4 py-2 border border-gray-300 rounded-md"
-                placeholder="Enter longitude"
+                placeholder="Enter longitude (optional)"
               />
             </div>
             <div className="flex justify-between">

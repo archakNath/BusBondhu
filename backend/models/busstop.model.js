@@ -4,32 +4,31 @@ import mongoose from "mongoose";
 const busStopSchema = new mongoose.Schema({
     name: {
         type: String,
-        required: true, // Ensure the bus stop name is always provided
+        required: true,
     },
     location: {
         type: {
             type: String,
             enum: ['Point'],
-            default: 'Point'
         },
         coordinates: {
-            type: [Number], // [longitude, latitude]
+            type: [Number],
             validate: {
                 validator: function (arr) {
+                    if (!arr) return true; // allow missing coordinates
                     return arr.length === 2;
                 },
-                message: "Coordinates must be an array of two numbers: [lon, lat]"
+                message: "Coordinates must be an array of [longitude, latitude]",
             },
-            required: false, // Optional to allow null initially
-        }
+        },
     },
     routes: {
-        type: [String], // Array of route names
-        required: false,
+        type: [String],
+        default: [],
     },
-});
+}, { timestamps: true });
 
-// Add geospatial index for location (if it exists)
+// 2dsphere index on location only if it's not null
 busStopSchema.index({ location: '2dsphere' });
 
 export default mongoose.model("BusStop", busStopSchema);
