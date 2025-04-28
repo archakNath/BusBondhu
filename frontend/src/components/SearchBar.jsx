@@ -10,7 +10,7 @@ export default function SearchBar() {
   const [busStops, setBusStops] = useState([]); // ✅ declare busStops state
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/busstops")
+    fetch("https://busbondhu-production.up.railway.app/api/busstops")
       .then((res) => res.json())
       .then((data) => setBusStops(data))
       .catch((error) => console.error("Error fetching bus stops:", error));

@@ -20,7 +20,7 @@ export default function Search() {
 
     const fetchAndCheckRoutes = async () => {
       try {
-        const res = await fetch("http://localhost:5000/api/busroutes");
+        const res = await fetch("https://busbondhu-production.up.railway.app/api/busroutes");
         const data = await res.json();
         setBusRoutes(data);
 
